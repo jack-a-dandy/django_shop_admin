@@ -2,3 +2,4 @@ django
 psycopg2
 django-cleanup
 Pillow
+django-admin-numeric-filter

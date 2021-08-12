@@ -1,0 +1,12 @@
+{% extends "admin/change_form.html" %}
+{% load i18n static admin_modify %}
+
+{% block content %}
+<div id="content-main">
+  <ul id='paths-list'>
+  {% for path in paths %}
+      <li style='font-size: 16px;'>{{path}}</li>
+  {% endfor %}
+  </ul>
+</div>
+{% endblock %}
