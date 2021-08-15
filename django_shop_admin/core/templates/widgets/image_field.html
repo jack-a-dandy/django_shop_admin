@@ -1,0 +1,13 @@
+<p>
+{% if widget.is_initial %}
+        <a href="{{widget.value.url}}" target="_blank"><img id="{{ widget.name }}-im" width="{{widget.width}}" height="{{widget.height}}"  style="object-fit: {{widget.object_fit}};" src="{{ widget.value.url }}"/></a><br><br>
+        {% if not widget.required %}
+            <input type="checkbox" name="{{ widget.checkbox_name }}" id="{{ widget.checkbox_id }}"{% if widget.attrs.disabled %} disabled{% endif %}>
+            <b style='color:red;'>{{ widget.clear_checkbox_label }}</b><br><br>
+        {% endif %}
+{{ widget.input_text }}:
+{% else %}
+<img id="{{ widget.name }}-im" width="300" height="300"  style="object-fit: contain;" alt="No image"/><br><br>
+{% endif %}
+<input onchange="showNewImage(event, this.name+'-im')" type="{{ widget.type }}" name="{{ widget.name }}"{% include "django/forms/widgets/attrs.html" %}><br>
+</p>

@@ -1,10 +1,10 @@
 from django.contrib import admin
-from django.contrib.admin.widgets import AdminFileWidget, FilteredSelectMultiple
-from django.utils.safestring import mark_safe
-from .models import Shop, Category, Product
+from django.contrib.admin.widgets import FilteredSelectMultiple
+from .models import Shop, Category, Product, ProductImage
 from django.db.models import ImageField, Q
 from django import forms
 from admin_numeric_filter.admin import RangeNumericFilter, NumericFilterModelAdmin
+from .widgets import ImageWidget
 from django.utils.html import format_html
 from django.urls import path, reverse
 from django.template.response import TemplateResponse
@@ -14,20 +14,10 @@ from django.contrib.admin.options import (
 	flatten_fieldsets, all_valid, IS_POPUP_VAR, TO_FIELD_VAR, 
 	helpers, _
 )
+from django.conf import settings
+from django.forms.models import BaseInlineFormSet
 
 # Register your models here.
-class AdminImageWidget(AdminFileWidget):
-	def render(self, name, value, attrs=None, renderer=None):
-		output = []
-		if value and getattr(value, "url", None):
-			image_url = value.url
-			file_name = str(value)
-			output.append(u' <a href="%s" target="_blank"><img src="%s" alt="%s" width="200" height="200"  style="object-fit: cover;"/></a><br>%s ' % \
-				(image_url, image_url, file_name, 'Изменить:'))
-		output.append(super(AdminFileWidget, self).render(name, value, attrs))
-		return mark_safe(u''.join(output))
-
-
 @admin.register(Shop)
 class ShopAdmin(admin.ModelAdmin):
 	list_display = ('title','id')
@@ -35,7 +25,7 @@ class ShopAdmin(admin.ModelAdmin):
 	search_fields = ('title',)
 	ordering = ('title',)
 	readonly_fields = ('id',)
-	formfield_overrides = {ImageField: {'widget': AdminImageWidget}}
+	formfield_overrides = {ImageField: {'widget': ImageWidget}}
 
 
 class ParentCategoryFilter(admin.SimpleListFilter):
@@ -302,22 +292,91 @@ class CategoryFilter(admin.SimpleListFilter):
 		return queryset
 
 
+class OtherProductImagesInlineFormSet(BaseInlineFormSet):
+	def get_queryset(self):
+		qs = super(OtherProductImagesInlineFormSet, self).get_queryset()
+		return qs.only('image').order_by('id')[1:]
+
+
+class ProductImagesInlineAdmin(admin.TabularInline):
+	model = ProductImage
+	formset = OtherProductImagesInlineFormSet
+	extra = 0
+	classes = ('collapse',)
+	formfield_overrides = {ImageField: {'widget': ImageWidget}}
+	verbose_name_plural = 'ДРУГИЕ ФОТО'
+
+
+class MainProductImageWidget(ImageWidget):
+	width=450
+	height=450
+
+
+class ProductAdminForm(forms.ModelForm):
+	main_image = forms.ImageField(allow_empty_file=True, required=False, label='Фото',
+		widget=MainProductImageWidget)
+
+	class Meta:
+		model = Product
+		fields = '__all__'
+
+	def __init__(self, *args, **kwargs):
+		super(ProductAdminForm, self).__init__(*args, **kwargs)
+		instance = kwargs.get("instance")
+		if instance and instance.pk:
+			f = instance.images.only('image').first()
+			if f:
+				self.fields['main_image'].initial = f.image
+
+
 class MyNumericRangeFilter(RangeNumericFilter):
 	template = 'admin/filter_numeric_range.html'
 
 
 @admin.register(Product)
 class ProductAdmin(NumericFilterModelAdmin):
-	list_display = ('title', 'id', 'amount', 'price', 'active', 'shop')
-	fields = ('id', 'active', 'title', 'description', 'amount', 'price', 'categories', 'shop')
+	list_display = ('title', 'main_image', 'id', 'amount', 'price', 'active', 'shop')
+	fieldsets = ((None, {'fields':('id', 'shop', 'active',  'title', 'description', 'amount', 'price')}),
+		('КАТЕГОРИИ', {'fields': ('categories',), 'classes': ('collapse',)}),
+		('ОСНОВНОЕ ФОТО', {'fields': ('main_image',)}),
+		)
 	search_fields = ('id', 'title')
 	list_filter = ('active',('price',MyNumericRangeFilter), 
 		ShopFilter, CategoryFilter)
 	readonly_fields = ('id',)
 	filter_horizontal = ('categories',)
+	form = ProductAdminForm
+	inlines = (ProductImagesInlineAdmin,)
+
+	def main_image(self, instance):
+		url = instance.images.only('image').first()
+		if url:
+			return format_html("<img src='{}/{}' width=100 height=100 style='object-fit:contain' />",
+				settings.MEDIA_URL, url.image)
+		else:
+			return format_html("<img alt='—' />")
+
+	main_image.short_description = 'Фото'
 
 	def formfield_for_manytomany(self, db_field, request, **kwargs):
 		if db_field.name == "categories":
 			kwargs["queryset"] = Category.objects.only('title').order_by('title')
 		return super().formfield_for_manytomany(db_field, request, **kwargs)
+
+	def save_formset(self, request, form, formset, change):
+		main_image = form.fields['main_image']
+		new_image = form.cleaned_data.get('main_image')
+		if main_image.has_changed(main_image.initial, new_image):
+			fi = form.instance.images.first()
+			if new_image:
+				if fi:
+					fi.image = new_image
+					fi.save()
+				else:
+					ni = ProductImage(image=new_image, product=form.instance)
+					ni.save()
+			else:
+				if fi:
+					fi.delete()
+		super(ProductAdmin, self).save_formset(request, form, formset, change)
 

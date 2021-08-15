@@ -5,14 +5,19 @@ from django.conf import settings
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from django.db.models.signals import m2m_changed
+import uuid
+from django.core.validators import MinValueValidator
 
 # Create your models here.
+
+def shop_image_path_handler(instance, filename):
+	return f"{settings.IMAGES_DIR}/shops/{uuid.uuid4()}.{filename.split('.')[-1]}"
 
 class Shop(Model):
 	title = CharField(verbose_name='Название', max_length=200, unique=True)
 	description = TextField(verbose_name='Описание', null=True, blank=True)
 	imageUrl = ImageField(verbose_name="Фото", null=True, blank=True, 
-		upload_to=f'{settings.IMAGES_DIR}/shops/')
+		upload_to=shop_image_path_handler, unique=True)
 
 	def __str__(self):
 		return self.title
@@ -104,7 +109,8 @@ class Product(Model):
 	title = CharField(verbose_name='Название', max_length=200, db_index=True)
 	description = TextField(verbose_name='Описание', null=True, blank=True)
 	amount = PositiveIntegerField(verbose_name='Кол-во')
-	price = DecimalField(max_digits=10, decimal_places=2, verbose_name='Цена')
+	price = DecimalField(max_digits=10, decimal_places=2, verbose_name='Цена',
+		validators=(MinValueValidator(0.0),))
 	active = BooleanField(default=True, blank=True, verbose_name='Активен')
 	shop = ForeignKey(Shop, on_delete=CASCADE, related_name='products', verbose_name='Магазин')
 	categories = ManyToManyField(Category, related_name='products', verbose_name='Категории')
@@ -120,3 +126,16 @@ class Product(Model):
 				CheckConstraint(check=Q(title__iregex=r'^\S.*\S$'), name='product_title_check'),
 				CheckConstraint(check=Q(price__gte=0), name='price_gte_0'),
 			)
+
+
+def product_image_path_handler(instance, filename):
+	return f"{settings.IMAGES_DIR}/products/{instance.product.id}/{uuid.uuid4()}.{filename.split('.')[-1]}"
+
+class ProductImage(Model):
+	image = ImageField(verbose_name='Фото', unique=True, upload_to=product_image_path_handler)
+	product = ForeignKey(Product, on_delete=CASCADE, verbose_name='Продукт', related_name='images')
+
+	class Meta:
+		db_table = 'productimages'
+		verbose_name = 'Фото продукта'
+		verbose_name_plural = 'Фото продукта'
