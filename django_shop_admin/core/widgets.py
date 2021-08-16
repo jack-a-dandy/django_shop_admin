@@ -1,4 +1,7 @@
 from django import forms
+from django.contrib.admin.widgets import FilteredSelectMultiple
+from django.utils.html import conditional_escape
+from django.utils.html import format_html
 
 class ImageWidget(forms.widgets.ClearableFileInput):
 	template_name = "widgets/image_field.html"
@@ -18,3 +21,12 @@ class ImageWidget(forms.widgets.ClearableFileInput):
 			'object_fit': self.object_fit
 			})
 		return context
+
+
+class FilteredSelectMultipleWithReadonlyMode(FilteredSelectMultiple):
+	def render(self, name, value, attrs=None, renderer=None):
+		if self.attrs.get('readonly'):
+			return format_html("<div class='readonly'>{}</div>", 
+				conditional_escape(", ".join(value)))
+		else:
+			return super(FilteredSelectMultipleWithReadonlyMode,self).render(name,value,attrs,renderer)

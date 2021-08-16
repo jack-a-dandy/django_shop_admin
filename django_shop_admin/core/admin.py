@@ -4,7 +4,7 @@ from .models import Shop, Category, Product, ProductImage
 from django.db.models import ImageField, Q
 from django import forms
 from admin_numeric_filter.admin import RangeNumericFilter, NumericFilterModelAdmin
-from .widgets import ImageWidget
+from .widgets import ImageWidget, FilteredSelectMultipleWithReadonlyMode
 from django.utils.html import format_html
 from django.urls import path, reverse
 from django.template.response import TemplateResponse
@@ -16,16 +16,76 @@ from django.contrib.admin.options import (
 )
 from django.conf import settings
 from django.forms.models import BaseInlineFormSet
+from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.models import User
 
 # Register your models here.
+admin.site.site_header = 'Администрация'
+admin.site.site_title = 'Администрация'
+
+
+class ManagedShopsInlineAdmin(admin.TabularInline):
+	model = Shop.product_managers.through
+	extra = 0
+	verbose_name_plural = 'Связанные магазины'
+	verbose_name = 'Магазин'
+
+
+class CustomUserAdmin(UserAdmin):
+	def get_inlines(self, request, obj):
+		if obj.managed_shops or obj.groups.filter(name='product managers').exists():
+			return (ManagedShopsInlineAdmin,)
+		else:
+			return ()
+
+admin.site.unregister(User)
+admin.site.register(User, CustomUserAdmin)
+
+
 @admin.register(Shop)
 class ShopAdmin(admin.ModelAdmin):
-	list_display = ('title','id')
-	fields = ('id', 'title', 'description', 'imageUrl')
+	list_display = ('title','image','id', 'description')
 	search_fields = ('title',)
 	ordering = ('title',)
 	readonly_fields = ('id',)
 	formfield_overrides = {ImageField: {'widget': ImageWidget}}
+	filter_horizontal = ('product_managers',)
+
+	def image(self, instance):
+		url = instance.imageUrl
+		if url:
+			return format_html("<img src='{}/{}' width=100 height=100 style='object-fit:contain' />",
+				settings.MEDIA_URL, url)
+		else:
+			return format_html("<img alt='—' />")
+
+	image.short_description = 'Фото'
+
+	def get_fields(self, request, obj=None):
+		if request.user.is_superuser:
+			return ('id', 'title', 'description', 'imageUrl', 'product_managers')
+		else:
+			return ('id', 'title', 'description', 'imageUrl')
+
+	def get_queryset(self, request):
+		if request.user.is_superuser:
+			return super().get_queryset(request)
+		else:
+			return request.user.managed_shops.order_by(*self.ordering)
+
+	def can_access_object(self, request, obj):
+		if obj is None:
+			return True
+		return request.user.managed_shops.filter(id=obj.id).exists()
+
+	def has_view_permission(self, request, obj=None):
+		if request.user.is_superuser:
+			return True
+		else:
+			if super().has_view_permission(request, obj):
+				return self.can_access_object(request, obj)
+			else:
+				return False
 
 
 class ParentCategoryFilter(admin.SimpleListFilter):
@@ -44,7 +104,7 @@ class ParentCategoryFilter(admin.SimpleListFilter):
 
 
 class CategoryAdminForm(forms.ModelForm):
-	parents = forms.ModelMultipleChoiceField(
+	parents = forms.ModelMultipleChoiceField(label='Родительские категории',
 				queryset = Category.objects.only('title').order_by('title'),
 				required=False,
 				widget=FilteredSelectMultiple(
@@ -52,10 +112,10 @@ class CategoryAdminForm(forms.ModelForm):
 						is_stacked=False
 					))
 
-	children = forms.ModelMultipleChoiceField(
+	children = forms.ModelMultipleChoiceField(label='Дочерние категории',
 				queryset=Category.objects.only('title').order_by('title'),
 				required=False,
-				widget=FilteredSelectMultiple(
+				widget=FilteredSelectMultipleWithReadonlyMode(
 						verbose_name='Дочерние категории',
 						is_stacked=False
 					)
@@ -77,6 +137,7 @@ class CategoryAdminForm(forms.ModelForm):
 							~(Q(pk=instance.pk)|Q(pk__in=instance.parents.values('id')))
 					).only('title').order_by('title')
 			self.fields['children'].initial=instance.category_set.all()
+			self.fields['children'].widget.attrs['readonly']=True
 
 	def save(self, commit=True):
 		category = super(CategoryAdminForm, self).save(commit=False)
@@ -109,6 +170,9 @@ class CategoryAdmin(admin.ModelAdmin):
 	form = CategoryAdminForm
 
 	change_form_template = 'admin/category_change_form.html'
+
+	def get_fields(self, request, obj=None):
+		return ('id', 'title', 'description', 'parents', 'children')
 
 	def get_urls(self):
 		urls = super().get_urls()
@@ -212,7 +276,10 @@ class CategoryAdmin(admin.ModelAdmin):
 				formsets, inline_instances = self._create_formsets(request, obj, change=True)
 
 		if not add and not self.has_change_permission(request, obj):
-			readonly_fields = flatten_fieldsets(fieldsets)
+			#readonly_fields = flatten_fieldsets(fieldsets)
+			readonly_fields = ['id','title','description', 'parents']
+			form.fields['children'].to_field_name='title'
+			form.fields['children'].widget.attrs['readonly']=True
 		else:
 			readonly_fields = self.get_readonly_fields(request, obj)
 		adminForm = helpers.AdminForm(
@@ -267,7 +334,8 @@ class ShopFilter(admin.SimpleListFilter):
 	parameter_name = 'shop__id'
 
 	def lookups(self, request, model_admin):
-		objs = Shop.objects.filter(products__isnull=False).only('title').distinct().order_by('title')
+		objs = Shop.objects if request.user.is_superuser else request.user.managed_shops
+		objs = objs.filter(products__isnull=False).only('title').distinct().order_by('title')
 		return [(o.pk, o.title) for o in objs]
 
 	def queryset(self, request, queryset):
@@ -282,7 +350,10 @@ class CategoryFilter(admin.SimpleListFilter):
 	parameter_name = 'categories__id'
 
 	def lookups(self, request, model_admin):
-		objs = Category.objects.filter(products__isnull=False).only('title').distinct().order_by('title')
+		filters = {'products__isnull': False}
+		if not request.user.is_superuser:
+			filters['products__shop__id__in']=request.user.managed_shops.values_list('id', flat=True)
+		objs = Category.objects.filter(**filters).only('title').distinct().order_by('title')
 		return [(o.pk, o.title) for o in objs]
 
 	def queryset(self, request, queryset):
@@ -327,6 +398,8 @@ class ProductAdminForm(forms.ModelForm):
 			f = instance.images.only('image').first()
 			if f:
 				self.fields['main_image'].initial = f.image
+		else:
+			self.fields['shop'].initial = self.fields['shop'].queryset.first()
 
 
 class MyNumericRangeFilter(RangeNumericFilter):
@@ -336,7 +409,7 @@ class MyNumericRangeFilter(RangeNumericFilter):
 @admin.register(Product)
 class ProductAdmin(NumericFilterModelAdmin):
 	list_display = ('title', 'main_image', 'id', 'amount', 'price', 'active', 'shop')
-	fieldsets = ((None, {'fields':('id', 'shop', 'active',  'title', 'description', 'amount', 'price')}),
+	fieldsets = ((None, {'fields':('id', 'shop', 'title', 'description', 'active', 'amount', 'price')}),
 		('КАТЕГОРИИ', {'fields': ('categories',), 'classes': ('collapse',)}),
 		('ОСНОВНОЕ ФОТО', {'fields': ('main_image',)}),
 		)
@@ -363,6 +436,16 @@ class ProductAdmin(NumericFilterModelAdmin):
 			kwargs["queryset"] = Category.objects.only('title').order_by('title')
 		return super().formfield_for_manytomany(db_field, request, **kwargs)
 
+	def formfield_for_foreignkey(self, db_field, request, **kwargs):
+		if db_field.name == 'shop':
+			qs = None
+			if not request.user.is_superuser:
+				qs = request.user.managed_shops
+			else:
+				qs = Shop.objects
+			kwargs['queryset']=qs.only('title').order_by('title')
+		return super().formfield_for_foreignkey(db_field, request, **kwargs)
+
 	def save_formset(self, request, form, formset, change):
 		main_image = form.fields['main_image']
 		new_image = form.cleaned_data.get('main_image')
@@ -380,3 +463,41 @@ class ProductAdmin(NumericFilterModelAdmin):
 					fi.delete()
 		super(ProductAdmin, self).save_formset(request, form, formset, change)
 
+	def get_queryset(self, request):
+		qs = super().get_queryset(request)
+		if request.user.is_superuser:
+			return qs
+		else:
+			return qs.filter(shop__id__in=request.user.managed_shops.values_list('id', flat=True))
+
+	def can_access_object(self, request, obj):
+		if obj is None:
+			return True
+		return request.user.managed_shops.filter(id=obj.shop_id).exists()
+
+	def has_view_permission(self, request, obj=None):
+		if request.user.is_superuser:
+			return True
+		else:
+			if super().has_view_permission(request, obj):
+				return self.can_access_object(request, obj)
+			else:
+				return False
+
+	def has_change_permission(self, request, obj=None):
+		if request.user.is_superuser:
+			return True
+		else:
+			if super().has_change_permission(request, obj):
+				return self.can_access_object(request, obj)
+			else:
+				return False
+
+	def has_delete_permission(self, request, obj=None):
+		if request.user.is_superuser:
+			return True
+		else:
+			if super().has_delete_permission(request, obj):
+				return self.can_access_object(request, obj)
+			else:
+				return False

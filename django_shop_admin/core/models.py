@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db.models.signals import m2m_changed
 import uuid
 from django.core.validators import MinValueValidator
+from django.contrib.auth.models import User
 
 # Create your models here.
 
@@ -18,6 +19,8 @@ class Shop(Model):
 	description = TextField(verbose_name='Описание', null=True, blank=True)
 	imageUrl = ImageField(verbose_name="Фото", null=True, blank=True, 
 		upload_to=shop_image_path_handler, unique=True)
+	product_managers = ManyToManyField(User, limit_choices_to=Q(groups__name='product managers'),
+		related_name='managed_shops', verbose_name='Менеджеры продуктов', blank=True)
 
 	def __str__(self):
 		return self.title
