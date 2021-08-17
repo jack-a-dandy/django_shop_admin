@@ -25,7 +25,7 @@ class ImageWidget(forms.widgets.ClearableFileInput):
 
 class FilteredSelectMultipleWithReadonlyMode(FilteredSelectMultiple):
 	def render(self, name, value, attrs=None, renderer=None):
-		if self.attrs.get('readonly'):
+		if self.attrs.get('is_readonly'):
 			return format_html("<div class='readonly'>{}</div>", 
 				conditional_escape(", ".join(value)))
 		else:

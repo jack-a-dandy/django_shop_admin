@@ -289,7 +289,7 @@ class CategoryAdmin(admin.ModelAdmin, ShortDescriptionListFieldMixin):
 			#readonly_fields = flatten_fieldsets(fieldsets)
 			readonly_fields = ['id','title','description', 'parents']
 			form.fields['children'].to_field_name='title'
-			form.fields['children'].widget.attrs['readonly']=True
+			form.fields['children'].widget.attrs['is_readonly']=True
 		else:
 			readonly_fields = self.get_readonly_fields(request, obj)
 		adminForm = helpers.AdminForm(
