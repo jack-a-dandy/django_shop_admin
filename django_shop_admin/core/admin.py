@@ -18,6 +18,7 @@ from django.conf import settings
 from django.forms.models import BaseInlineFormSet
 from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.models import User
+from django.template.defaultfilters import truncatechars
 
 # Register your models here.
 admin.site.site_header = 'Администрация'
@@ -42,9 +43,18 @@ admin.site.unregister(User)
 admin.site.register(User, CustomUserAdmin)
 
 
+class ShortDescriptionListFieldMixin:
+	short_description_length = 160
+
+	def short_description(self, instance):
+		return truncatechars(instance.description, self.short_description_length)
+
+	short_description.short_description = 'Описание'
+
+
 @admin.register(Shop)
-class ShopAdmin(admin.ModelAdmin):
-	list_display = ('title','image','id', 'description')
+class ShopAdmin(admin.ModelAdmin, ShortDescriptionListFieldMixin):
+	list_display = ('title','image','id', 'short_description')
 	search_fields = ('title',)
 	ordering = ('title',)
 	readonly_fields = ('id',)
@@ -161,8 +171,8 @@ class CategoryAdminForm(forms.ModelForm):
 
 
 @admin.register(Category)
-class CategoryAdmin(admin.ModelAdmin):
-	list_display = ('title','id','category_actions')
+class CategoryAdmin(admin.ModelAdmin, ShortDescriptionListFieldMixin):
+	list_display = ('title','id', 'short_description', 'category_actions')
 	search_fields = ('products__id', 'title')
 	list_filter = (ParentCategoryFilter,)
 	ordering = ('title',)
@@ -407,8 +417,8 @@ class MyNumericRangeFilter(RangeNumericFilter):
 
 
 @admin.register(Product)
-class ProductAdmin(NumericFilterModelAdmin):
-	list_display = ('title', 'main_image', 'id', 'amount', 'price', 'active', 'shop')
+class ProductAdmin(NumericFilterModelAdmin, ShortDescriptionListFieldMixin):
+	list_display = ('title','main_image', 'id', 'amount', 'price', 'active', 'shop', 'short_description')
 	fieldsets = ((None, {'fields':('id', 'shop', 'title', 'description', 'active', 'amount', 'price')}),
 		('КАТЕГОРИИ', {'fields': ('categories',), 'classes': ('collapse',)}),
 		('ОСНОВНОЕ ФОТО', {'fields': ('main_image',)}),
@@ -425,7 +435,7 @@ class ProductAdmin(NumericFilterModelAdmin):
 	def main_image(self, instance):
 		url = instance.images.only('image').first()
 		if url:
-			return format_html("<img src='{}/{}' width=100 height=100 style='object-fit:contain' />",
+			return format_html("<img src='{}{}' width=100 height=100 style='object-fit:contain' />",
 				settings.MEDIA_URL, url.image)
 		else:
 			return format_html("<img alt='—' />")
