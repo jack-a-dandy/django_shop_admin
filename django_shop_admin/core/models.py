@@ -15,7 +15,7 @@ def shop_image_path_handler(instance, filename):
 	return f"{settings.IMAGES_DIR}/shops/{uuid.uuid4()}.{filename.split('.')[-1]}"
 
 class Shop(Model):
-	title = CharField(verbose_name='Название', max_length=200, unique=True)
+	title = CharField(verbose_name='Название', max_length=50, unique=True)
 	description = TextField(verbose_name='Описание', null=True, blank=True)
 	imageUrl = ImageField(verbose_name="Фото", null=True, blank=True, 
 		upload_to=shop_image_path_handler, unique=True)
@@ -35,7 +35,7 @@ class Shop(Model):
 
 
 class Category(Model):
-	title = CharField(verbose_name='Название', max_length=200, unique=True)
+	title = CharField(verbose_name='Название', max_length=50, unique=True)
 	description = TextField(verbose_name='Описание', null=True, blank=True)
 	parents = ManyToManyField('self', symmetrical=False, through='CategoryParent', 
 		blank=True, verbose_name='Родительские категории')
@@ -109,9 +109,9 @@ m2m_changed.connect(process_m2m_category_update, sender=CategoryParent)
 
 
 class Product(Model):
-	title = CharField(verbose_name='Название', max_length=200, db_index=True)
+	title = CharField(verbose_name='Название', max_length=100, db_index=True)
 	description = TextField(verbose_name='Описание', null=True, blank=True)
-	amount = PositiveIntegerField(verbose_name='Кол-во')
+	amount = PositiveIntegerField(verbose_name='Кол-во', default=0, blank=True)
 	price = DecimalField(max_digits=10, decimal_places=2, verbose_name='Цена',
 		validators=(MinValueValidator(0.0),))
 	active = BooleanField(default=True, blank=True, verbose_name='Активен')
