@@ -420,6 +420,7 @@ class ProductAdmin(NumericFilterModelAdmin):
 	filter_horizontal = ('categories',)
 	form = ProductAdminForm
 	inlines = (ProductImagesInlineAdmin,)
+	actions = ('make_active', 'make_inactive')
 
 	def main_image(self, instance):
 		url = instance.images.only('image').first()
@@ -501,3 +502,11 @@ class ProductAdmin(NumericFilterModelAdmin):
 				return self.can_access_object(request, obj)
 			else:
 				return False
+
+	@admin.action(description='Сделать активными')
+	def make_active(self, request, queryset):
+		queryset.update(active=True)
+
+	@admin.action(description='Сделать неактивными')
+	def make_inactive(self, request, queryset):
+		queryset.update(active=False)
