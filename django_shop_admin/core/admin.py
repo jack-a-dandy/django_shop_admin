@@ -431,6 +431,7 @@ class ProductAdmin(NumericFilterModelAdmin, ShortDescriptionListFieldMixin):
 	form = ProductAdminForm
 	inlines = (ProductImagesInlineAdmin,)
 	actions = ('make_active', 'make_inactive')
+	list_per_page = 50
 
 	def main_image(self, instance):
 		url = instance.images.only('image').first()
