@@ -1,0 +1,5 @@
+#result_list tbody th.field-title {
+	max-width: 200px;
+	word-wrap: break-word;
+    overflow-wrap: break-word;
+}

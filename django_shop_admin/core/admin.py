@@ -433,6 +433,9 @@ class ProductAdmin(NumericFilterModelAdmin, ShortDescriptionListFieldMixin):
 	actions = ('make_active', 'make_inactive')
 	list_per_page = 50
 
+	class Media:
+		css = {'all': ('css/productlist.css',)}
+
 	def main_image(self, instance):
 		url = instance.images.only('image').first()
 		if url:
