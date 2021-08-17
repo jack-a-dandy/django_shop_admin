@@ -418,7 +418,7 @@ class MyNumericRangeFilter(RangeNumericFilter):
 
 @admin.register(Product)
 class ProductAdmin(NumericFilterModelAdmin, ShortDescriptionListFieldMixin):
-	list_display = ('title','main_image', 'id', 'amount', 'price', 'active', 'shop', 'short_description')
+	list_display = ('title','main_image', 'id', 'amount', 'price', 'active', 'shop_id', 'short_description')
 	fieldsets = ((None, {'fields':('id', 'shop', 'title', 'description', 'active', 'amount', 'price')}),
 		('КАТЕГОРИИ', {'fields': ('categories',), 'classes': ('collapse',)}),
 		('ОСНОВНОЕ ФОТО', {'fields': ('main_image',)}),
